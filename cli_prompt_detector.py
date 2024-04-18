@@ -215,7 +215,8 @@ class PromptInjectionDetector:
 
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-        history = model.fit(X_train_vectors, y_train, epochs=10, batch_size=32, validation_split=0.2, verbose=0)
+        history = model.fit(X_train_vectors, y_train, epochs=180, batch_size=64, validation_split=0.2, verbose=0)
+        
         accuracy = history.history['accuracy'][-1]
         print("Accuracy for {}: {}".format(method.__name__, accuracy))
 
