@@ -19,8 +19,135 @@ import os
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 class PromptInjectionDetector:
-    def __init__(self):
-        pass
+    def __init__(self, special_characters):
+        self.special_characters = special_characters
+        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        self.bert_model = TFBertModel.from_pretrained('bert-base-uncased', trainable=False)
+        self.method_accuracies = {}
+        self.nlp = spacy.load("en_core_web_sm")
+
+    def preprocess_text(self, text):
+        encoded_text = self.tokenizer.encode_plus(text, add_special_tokens=True, max_length=64, pad_to_max_length=True, return_tensors='tf')
+        return encoded_text['input_ids'][0].numpy()
+
+    def build_enhanced_neural_network(self, input_shape):
+        input_layer = Input(shape=(input_shape,), dtype=tf.int32, name="input_layer")
+        bert_output = self.bert_model(input_layer)[0]
+        flattened_bert_output = Flatten()(bert_output)
+        dense_1 = Dense(256, activation='relu')(flattened_bert_output)
+        dropout_1 = Dropout(0.5)(dense_1)
+        dense_2 = Dense(128, activation='relu')(dropout_1)
+        dropout_2 = Dropout(0.3)(dense_2)
+        output_layer = Dense(1, activation='sigmoid')(dropout_2)
+
+        model = tf.keras.Model(inputs=input_layer, outputs=output_layer)
+        return model
+
+    def train_enhanced_neural_network(self, X_train, X_test, y_train, y_test, method):
+        X_train_processed = np.array([self.preprocess_text(text) for text in X_train])
+        X_test_processed = np.array([self.preprocess_text(text) for text in X_test])
+
+        label_encoder = LabelEncoder()
+        y_train_encoded = label_encoder.fit_transform(y_train)
+        y_test_encoded = label_encoder.transform(y_test)
+
+        model = self.build_enhanced_neural_network(X_train_processed.shape[1])
+
+        optimizer = Adam(learning_rate=5e-5)
+        model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+
+        early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+        learning_rate_scheduler = LearningRateScheduler(lambda epoch: 5e-5 * (0.8 ** epoch))
+
+        checkpoint = ModelCheckpoint("best_initial_model.hdf5", monitor='val_accuracy', verbose=1, save_best_only=True, mode='max', period=1, save_weights_only=True)
+        # model_history = model.fit(X_train, y_train,batch_size=64, epochs=180, validation_data=(X_test, y_test),callbacks=[checkpoint])
+
+        history = model.fit(
+            X_train_processed, y_train_encoded,
+            epochs=180, batch_size=64,
+            validation_split=0.2,
+            callbacks=[checkpoint],
+            verbose=1
+        )
+
+        plt.plot(history.history['accuracy'])
+        plt.plot(history.history['val_accuracy'])
+        plt.title('Model Accuracy')
+        plt.ylabel('Accuracy')
+        plt.xlabel('Epoch')
+        plt.legend(['Train', 'Test'], loc='upper left')
+        plt.savefig('Initial_Model_Accuracy.png')
+        plt.show()
+        plt.plot(history.history['loss'])
+        plt.plot(history.history['val_loss'])
+        plt.title('Model Loss')
+        plt.ylabel('Loss')
+        plt.xlabel('Epoch')
+        plt.legend(['train', 'test'], loc='upper left')
+        plt.savefig('Initial_Model_loss.png')
+        plt.show()
+
+        model.load_weights("best_initial_model.hdf5")
+
+        print("Loss of the model is - " , model.evaluate(X_test_processed,y_test_encoded)[0])
+        print("Accuracy of the model is - " , model.evaluate(X_test_processed,y_test_encoded)[1]*100 , "%")
+
+        predictions = model.predict(X_test_processed)
+
+        finaldf = np.array([y_test_encoded, np.concatenate(predictions)]).T
+        finaldf = pd.DataFrame(data=finaldf, columns=["Predicted Values", "Actual Values"])
+
+        cm = confusion_matrix(y_test_encoded, [np.round(i) for i in predictions])
+        plt.figure(figsize = (12, 10))
+        cm = pd.DataFrame(cm , index = [0, 1] , columns = [i for i in [0, 1]])
+        ax = sns.heatmap(cm, linecolor='white', cmap='Blues', linewidth=1, annot=True, fmt='')
+        bottom, top = ax.get_ylim()
+        ax.set_ylim(bottom + 0.5, top - 0.5)
+        plt.title('Confusion Matrix', size=20)
+        plt.xlabel('Predicted Labels', size=14)
+        plt.ylabel('Actual Labels', size=14)
+        plt.savefig('Initial_Model_Confusion_Matrix.png')
+        plt.show()
+
+
+        self.method_accuracies[method] = model.evaluate(X_test_processed,y_test_encoded)[1]
+        print("Accuracy for {}: {}".format(method, model.evaluate(X_test_processed,y_test_encoded)[1]))
+
+
+    def fit_model_with_enhancements(self):
+        dataset = load_dataset("deepset/prompt-injections")
+        X = dataset['train']['text']
+        y = dataset['train']['label']
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+        methods = [
+            self.detect_code,
+            self.detect_regex,
+            self.detect_special_characters,
+            self.detect_typo_levenshtein,
+            self.weighted_combination,
+            self.segmented_check,
+            self.iterative_refinement,
+            self.sequential_deepening,
+            self.combination_1,
+            self.combination_2,
+            self.combination_3,
+            self.combination_4,
+            self.combination_5
+        ]
+
+        for method in methods:
+            X_train_np = np.array(X_train)
+            X_test_np = np.array(X_test)
+            y_train_np = np.array(y_train)
+            y_test_np = np.array(y_test)
+
+            self.train_enhanced_neural_network(X_train_np, X_test_np, y_train_np, y_test_np, method)
+
+        # Print the accuracies for all methods
+        for method, accuracy in self.method_accuracies.items():
+            print("Accuracy for {}: {}".format(method, accuracy))
 
     def detect_code(self, text):
         code_keywords = ["os.", "subprocess.", "exec(", "eval(", "system(", "shell(", "`"]
@@ -33,9 +160,6 @@ class PromptInjectionDetector:
         ]
         regex_count = sum(1 for pattern in regex_patterns if re.search(pattern, text))
         return regex_count > 1, regex_count
-
-    def __init__(self, special_characters):
-        self.special_characters = special_characters
 
     def detect_special_characters(self, text):
         # Perform detection logic
@@ -154,6 +278,25 @@ class PromptInjectionDetector:
         # Возвращаем исходный результат, если ничего подозрительного не обнаружено
         return False
 
+    def detect_syntax_features(self, text):
+        doc = self.nlp(text)
+        # Пример обнаружения основных признаков синтаксиса
+        num_sentences = len(list(doc.sents))
+        num_tokens = len(doc)
+        num_nouns = len([token for token in doc if token.pos_ == "NOUN"])
+        num_verbs = len([token for token in doc if token.pos_ == "VERB"])
+        num_adjectives = len([token for token in doc if token.pos_ == "ADJ"])
+        num_adverbs = len([token for token in doc if token.pos_ == "ADV"])
+
+        return {
+            "num_sentences": num_sentences,
+            "num_tokens": num_tokens,
+            "num_nouns": num_nouns,
+            "num_verbs": num_verbs,
+            "num_adjectives": num_adjectives,
+            "num_adverbs": num_adverbs
+        }
+
     def combination_1(self, text):
         code_detected = self.detect_code(text)
         special_chars_detected = self.detect_special_characters(text)
@@ -180,103 +323,6 @@ class PromptInjectionDetector:
         sequential_result = self.sequential_deepening(text)
         special_chars_detected = self.detect_special_characters(text)
         return sequential_result and special_chars_detected
-
-    def preprocess_and_train(self, method, texts):
-        processed_texts = [str(method(text)) for text in texts]
-        return processed_texts
-
-    def vectorize_text(self, texts):
-        nlp = spacy.load("en_core_web_sm", disable=["parser", "ner"])
-
-        # N-Gram Vectorizer
-        ngram_vectorizer = TfidfVectorizer(ngram_range=(1, 3), max_features=1000)
-        ngram_vectors = ngram_vectorizer.fit_transform(texts)
-
-        # Part-of-Speech Tagging
-        pos_tags = []
-        for text in texts:
-            doc = nlp(text)
-            pos_tags.append(" ".join([token.pos_ for token in doc]))
-
-        # Combine N-Gram and POS features
-        combined_vectors = np.concatenate((ngram_vectors.toarray(), TfidfVectorizer().fit_transform(pos_tags).toarray()), axis=1)
-
-        return combined_vectors, ngram_vectorizer
-
-    def train_neural_network(self, method, X_train, X_test, y_train, y_test):
-        X_train_processed = self.preprocess_and_train(method, X_train)
-        X_test_processed = self.preprocess_and_train(method, X_test)
-
-        vectorizer = TfidfVectorizer(max_features=1000)
-        X_train_vectors = vectorizer.fit_transform(X_train_processed).toarray()
-        X_test_vectors = vectorizer.transform(X_test_processed).toarray()
-
-        model = self.build_neural_network(X_train_vectors.shape[1])  # Create a new model instance
-
-        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-        history = model.fit(X_train_vectors, y_train, epochs=180, batch_size=64, validation_split=0.2, verbose=0)
-        
-        accuracy = history.history['accuracy'][-1]
-        print("Accuracy for {}: {}".format(method.__name__, accuracy))
-
-    def build_neural_network(self, input_shape):
-        model = Sequential([
-            Dense(128, activation='relu', input_shape=(input_shape,)),
-            Dropout(0.5),
-            Dense(64, activation='relu'),
-            Dropout(0.3),
-            Dense(1, activation='sigmoid')
-        ])
-        return model
-
-        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-        history = model.fit(X_train_vectors, y_train, epochs=10, batch_size=32, validation_split=0.2, verbose=0)
-        accuracy = history.history['accuracy'][-1]
-        print("Accuracy for {}: {}".format(method, accuracy))
-
-    def fit_model_with_neural_network(self):
-        dataset = load_dataset("deepset/prompt-injections")
-        X = dataset['train']['text']
-        y = dataset['train']['label']
-
-        if not isinstance(X, list) or not isinstance(y, list):
-            X = list(X)
-            y = list(y)
-
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-
-        if not isinstance(X_train, list) or not isinstance(X_test, list) or not isinstance(y_train, list) or not isinstance(y_test, list):
-            X_train = list(X_train)
-            X_test = list(X_test)
-            y_train = list(y_train)
-            y_test = list(y_test)
-
-        methods = [
-            self.detect_code,
-            self.detect_regex,
-            self.detect_special_characters,
-            self.detect_typo_levenshtein,
-            self.weighted_combination,
-            self.segmented_check,
-            self.iterative_refinement,
-            self.sequential_deepening,
-            self.combination_1,
-            self.combination_2,
-            self.combination_3,
-            self.combination_4,
-            self.combination_5
-        ]
-
-        for method in methods:
-            # Convert the data to NumPy arrays
-            X_train_np = np.array(X_train)
-            X_test_np = np.array(X_test)
-            y_train_np = np.array(y_train)
-            y_test_np = np.array(y_test)
-
-            self.train_neural_network(method, X_train_np, X_test_np, y_train_np, y_test_np)
 
 special_characters = ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')']
 weight_typo = 0.2
