@@ -1,19 +1,25 @@
-from collections import Counter
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import accuracy_score
-from datasets import load_dataset
-import re
-import numpy as np
+import pandas as pd
+from transformers import BertTokenizer, BertModel
+from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-import spacy
-from sklearn.feature_extraction.text import TfidfVectorizer
-import tensorflow as tf
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout
+import tensorflow as tf
+from sklearn.metrics import accuracy_score
+import numpy as np
+from tensorflow.keras.layers import Dense, Dropout, Flatten, Input
+from tensorflow.keras.optimizers import Adam
+from transformers import TFBertModel
+from tensorflow.keras.callbacks import EarlyStopping, LearningRateScheduler, ModelCheckpoint
+from datasets import load_dataset
+import numpy as np
+import re
 import spacy
+from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 import argparse
 from keras.callbacks import History
-import tensorflow as tf
 import logging
 import os
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
